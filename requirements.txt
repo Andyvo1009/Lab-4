@@ -1,3 +1,6 @@
 numpy
 spark
 pyspark
+matplotlib
+packaging
+joblibspark

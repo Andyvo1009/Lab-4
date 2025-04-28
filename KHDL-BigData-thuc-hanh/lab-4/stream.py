@@ -39,17 +39,17 @@ class Dataset:
 
         self.data = self.data[ix+batch_size:]
         self.labels = self.labels[ix+batch_size:]
-        print(self.data)
-        print(self.labels)
+        # print(self.data)
+        # print(self.labels)
         return batch
 
     def sendCIFARBatchFileToSpark(self, tcp_connection, input_batch_file, batch_size, split="train"):
         if split == "train":
-            total_batch = 50_000 / batch_size + 1
+            total_batch = 50_000 // batch_size + 1
         else:
-            total_batch = 10_000 / batch_size + 1
+            total_batch = 10_000 // batch_size + 1
 
-        pbar = tqdm(total_batch)
+        pbar = tqdm(total=total_batch)
         data_received = 0
         for file in input_batch_file:
             batches = self.data_generator(file, batch_size)
@@ -67,13 +67,14 @@ class Dataset:
                         payload[batch_idx][f'feature-{feature_idx}'] = images[batch_idx][feature_idx]
                     payload[batch_idx]['label'] = labels[batch_idx]
 
-                # convert the payload to string
                 payload = (json.dumps(payload) + "\n").encode()
-                #print(payload)
                 try:
-                    tcp_connection.sendall(payload)
-                except BrokenPipeError:
-                    print("Either batch size is too big for the dataset or the connection was closed")
+                    tcp_connection.send(payload)
+                except (BrokenPipeError, ConnectionResetError) as e:
+                    print(f"Connection error: {e}. Reconnecting...")
+                    tcp_connection.close()
+                    tcp_connection, _ = self.connectTCP()
+                    tcp_connection.send(payload)  # Retry sending
                 except Exception as error_message:
                     print(f"Exception thrown but was handled: {error_message}")
 
@@ -81,7 +82,7 @@ class Dataset:
                 pbar.update(n=1)
                 pbar.set_description(f"it: {data_received} | received : {batch_size} images")
                 time.sleep(sleep_time)
-
+        return tcp_connection  # Return the connection for reuse
     def connectTCP(self):   
         s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
@@ -93,7 +94,7 @@ class Dataset:
 
         return connection, address
 
-    def streamCIFARDataset(self, tcp_connection, folder, batch_size):
+    def streamCIFARDataset(self, tcp_connection, folder, batch_size, train_test_split):
         CIFAR_BATCHES = [
             os.path.join(folder, 'data_batch_1'),
             os.path.join(folder, 'data_batch_2'),
@@ -102,8 +103,9 @@ class Dataset:
             os.path.join(folder, 'data_batch_5'),
             os.path.join(folder, 'test_batch'),
         ]
-        CIFAR_BATCHES = CIFAR_BATCHES[:-1] if train_test_split=='train' else [CIFAR_BATCHES[-1]]
-        self.sendCIFARBatchFileToSpark(tcp_connection, CIFAR_BATCHES, batch_size, train_test_split)
+        CIFAR_BATCHES = CIFAR_BATCHES[:-1] if train_test_split == 'train' else [CIFAR_BATCHES[-1]]
+        tcp_connection = self.sendCIFARBatchFileToSpark(tcp_connection, CIFAR_BATCHES, batch_size, train_test_split)
+        return tcp_connection
 
 if __name__ == '__main__':
     args = parser.parse_args()
@@ -115,11 +117,11 @@ if __name__ == '__main__':
     train_test_split = args.split
     dataset = Dataset()
     tcp_connection, _ = dataset.connectTCP()
-    
+
     if endless:
         while True:
-            dataset.streamCIFARDataset(tcp_connection, data_folder, batch_size)
+            tcp_connection = dataset.streamCIFARDataset(tcp_connection, data_folder, batch_size, train_test_split)
     else:
-        dataset.streamCIFARDataset(tcp_connection, data_folder, batch_size)
-
+        tcp_connection = dataset.streamCIFARDataset(tcp_connection, data_folder, batch_size, train_test_split)
+    print('Stop here')
     tcp_connection.close()

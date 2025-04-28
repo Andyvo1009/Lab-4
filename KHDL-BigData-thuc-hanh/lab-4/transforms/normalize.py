@@ -2,42 +2,18 @@ from typing import Tuple
 import numpy as np
 
 class Normalize:
-    """
-    Normalizes the input 3D matrix with the given mean and standard deviation. 
-    Performs per channel normalization of input matrix.
+    def __init__(self, mean, std):
+        self.mean = np.array(mean)  # Shape: (3,)
+        self.std = np.array(std)    # Shape: (3,)
 
-    Args
-    ----
-
-    mean (Tuple) : Tuple of means of Red Channel, Green Channel, Blue Channel
-    std (Tuple) : Tuple of std of Red Channel, Green Channel, Blue Channel
-
-    Returns
-    -------
-    Normalized `numpy.ndarray` with same shape as input 
-    """
-
-    def __init__(self,mean: Tuple, std: Tuple) -> None:
-        self.mean = mean
-        self.std = std
-
-    def transform(self,matrix: np.ndarray) -> np.ndarray:
-        
-        shape = matrix.shape
-        matrix = matrix/255.0
-        matrix = matrix.transpose(2,0,1)
-        r = matrix[0]
-        g = matrix[1]
-        b = matrix[2]
-
-        r = (r-self.mean[0])/self.std[0]
-        g = (g-self.mean[1])/self.std[1]
-        b = (b-self.mean[2])/self.std[2]
-
-        matrix[0] = r
-        matrix[1] = g
-        matrix[2] = b
-
-        matrix = matrix.transpose(1,2,0)
-        assert matrix.shape == shape
-        return matrix
+    def transform(self, image):
+        try:
+            image = np.array(image, dtype=np.float32)
+            # Ensure image is in range [0, 1] before applying mean/std
+            image = image / 255.0
+            # Broadcast mean and std across the image (32, 32, 3)
+            image = (image - self.mean) / self.std
+            return image  # Shape: (32, 32, 3)
+        except Exception as e:
+            print(f"Normalize error: {e}, image shape: {image.shape}")
+            raise

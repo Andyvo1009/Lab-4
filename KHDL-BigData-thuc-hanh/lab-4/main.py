@@ -1,7 +1,8 @@
 from trainer import SparkConfig, Trainer
 from models import SVM
-from transforms import Transforms, RandomHorizontalFlip, Normalize
-
+import pyspark
+from transforms import  RandomHorizontalFlip, Normalize
+from transforms import Transforms
 transforms = Transforms([
     RandomHorizontalFlip(p=0.345), 
     Normalize(
@@ -11,10 +12,12 @@ transforms = Transforms([
 ])
 
 if __name__ == "__main__":
-
     spark_config = SparkConfig()
+    # Add resource settings
+    spark_config.receivers = 4  # Increase parallelism
+    spark_config.batch_interval = 10  # Increase batch interval to reduce load
 
     svm = SVM(loss="squared_hinge", penalty="l2")
     trainer = Trainer(svm, "train", spark_config, transforms)
     trainer.train()
-    # trainer.predict()
+    trainer.predict()
